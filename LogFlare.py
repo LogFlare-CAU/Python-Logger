@@ -7,11 +7,19 @@ class LogFlare(logging.Logger):
     def __init__(self, name: str):
         super().__init__(name)
         self.conn = None
-        self.broadcastlevel = "INFO"
-        self.url = "http://localhost:80"
+        self.broadcastlevel: int = logging.WARNING  # int 기반
+        self.broadcasturl: str = "http://localhost:80"
+        self.broadcast: bool = False  # 브로드캐스트 on/off 스위치
 
-    async def broadcast(self, level_name: str, msg: str) -> None:
-        base = self.url
+    def set_broadcastlevel(self, level: int):
+        if not isinstance(level, int):
+            raise TypeError("broadcastlevel must be an int (e.g. logging.WARNING)")
+        if level not in logging._levelToName:  # 유효한 로그레벨인지 검사
+            raise ValueError(f"Invalid logging level: {level}")
+        self.broadcastlevel = level
+
+    async def broadcast_(self, level_name: str, msg: str) -> None:
+        base = self.broadcasturl
         if not base.startswith(("http://", "https://")):
             base = "http://" + base
         base = base.rstrip("/")
@@ -27,21 +35,15 @@ class LogFlare(logging.Logger):
             print(f"[Broadcast EXC] {e!r}")
         finally:
             pass
+
         print(f"[Broadcast] {msg}")
 
     def log(self, level, msg, *args, **kwargs):
         try:
-            numeric_broadcast_level = logging._nameToLevel[
-                str(self.broadcastlevel).upper()
-            ]
-        except KeyError:
-            numeric_broadcast_level = logging.INFO
-        try:
             formatted = (msg % args) if args else str(msg)
         except Exception:
             formatted = str(msg)
-
-        if level >= numeric_broadcast_level:
+        if level >= self.broadcastlevel and self.broadcast:
             level_name = logging.getLevelName(level)
-            asyncio.create_task(self.broadcast(level_name, formatted))
+            asyncio.create_task(self.broadcast_(level_name, formatted))
         return super().log(level, msg, *args, **kwargs)
