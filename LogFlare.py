@@ -1,9 +1,9 @@
 import logging
+import os
 import asyncio
 import threading
 import sys
 import aiohttp
-import os
 
 
 class LogFlare(logging.Logger):
@@ -43,16 +43,24 @@ class LogFlare(logging.Logger):
     async def broadcast_(self, errortype, level_name: str, msg: str) -> None:
         if not (self.project_name and self.project_key and self.broadcasturl):
             return
-        payload = {"errortype": errortype, "level": level_name, "message": msg}
+
+        payload = {
+            "errortype": errortype,
+            "level": level_name,
+            "message": msg,
+        }
         headers = {
             "Content-Type": "application/json",
             "Project": self.project_name,
             "ProjectKey": "Bearer " + self.project_key,
         }
+
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.broadcasturl, json=payload, headers=headers
+                    self.broadcasturl,
+                    json=payload,
+                    headers=headers,
                 ) as resp:
                     if resp.status >= 400:
                         text = await resp.text()
@@ -73,26 +81,37 @@ class LogFlare(logging.Logger):
         stacklevel=1,
     ):
         """표준 로깅 경로 오버라이드: errortype 자동 감지 + 브로드캐스트"""
+        # 원본 메시지 포맷팅
         try:
             formatted = (msg % args) if args else str(msg)
         except Exception:
             formatted = str(msg)
 
+        # errortype 추출
         errortype = None
         if exc_info:
             if isinstance(exc_info, tuple):
+                # (exc_type, exc, tb)
                 errortype = getattr(exc_info[0], "__name__", None)
             elif isinstance(exc_info, BaseException):
+                # Exception 인스턴스 직접 전달된 경우
                 errortype = type(exc_info).__name__
-            elif exc_info:
+            else:
+                # exc_info=True 이고, 현재 컨텍스트에 예외가 있는 경우
                 exc_type, _, _ = sys.exc_info()
                 if exc_type:
                     errortype = exc_type.__name__
 
+        # 3번의 추가 보정: 실수로 logger.error(error) 같은 패턴을 쓴 경우
+        if errortype is None and isinstance(msg, BaseException):
+            errortype = type(msg).__name__
+
+        # 브로드캐스트
         if self.broadcast and level >= self.broadcastlevel:
             level_name = logging.getLevelName(level)
             self._spawn_coro(self.broadcast_(errortype, level_name, formatted))
 
+        # 실제 로그 출력
         super()._log(
             level,
             msg,
@@ -105,18 +124,11 @@ class LogFlare(logging.Logger):
 
     # --------------------------- 표준 레벨 메서드 오버라이드 ---------------------------
 
-    def warning(self, msg, *args, exc_info=True, **kwargs):
-        """기본적으로 exc_info=True를 붙여서 errortype 자동 감지"""
-        return self._log(logging.WARNING, msg, args, exc_info=exc_info, **kwargs)
+    def warning(self, msg, *args, **kwargs):
+        return self._log(logging.WARNING, msg, args, **kwargs)
 
-    def error(self, msg, *args, exc_info=True, **kwargs):
-        """에러 로그 → 기본 exc_info=True"""
-        return self._log(logging.ERROR, msg, args, exc_info=exc_info, **kwargs)
+    def error(self, msg, *args, **kwargs):
+        return self._log(logging.ERROR, msg, args, **kwargs)
 
     def exception(self, msg, *args, exc_info=True, **kwargs):
-        """exception()은 항상 예외 컨텍스트 포함"""
         return self._log(logging.ERROR, msg, args, exc_info=exc_info, **kwargs)
-
-    def critical(self, msg, *args, exc_info=True, **kwargs):
-        """치명적 에러 → 기본 exc_info=True"""
-        return self._log(logging.CRITICAL, msg, args, exc_info=exc_info, **kwargs)
