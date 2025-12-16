@@ -125,10 +125,13 @@ class LogFlare(logging.Logger):
     # --------------------------- 표준 레벨 메서드 오버라이드 ---------------------------
 
     def warning(self, msg, *args, **kwargs):
+        """기본 exc_info 건드리지 않고 그대로 전달"""
         return self._log(logging.WARNING, msg, args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
+        """기본 exc_info 건드리지 않고 그대로 전달"""
         return self._log(logging.ERROR, msg, args, **kwargs)
 
     def exception(self, msg, *args, exc_info=True, **kwargs):
+        """exception()은 항상 예외 컨텍스트 포함하는 용도"""
         return self._log(logging.ERROR, msg, args, exc_info=exc_info, **kwargs)
