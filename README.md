@@ -33,27 +33,30 @@ def set_logger(name="LogFlare"):
         "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S"
     )
 
-    # Stream Handler
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
     console_handler.setFormatter(formatter)
     logger.addHandler(console_handler)
 
-    # Debug file handler
     file_debug_handler = logging.FileHandler(var.debugfile, encoding="utf-8", mode="w")
     file_debug_handler.setLevel(logging.DEBUG)
     file_debug_handler.setFormatter(formatter)
     logger.addHandler(file_debug_handler)
 
-    # Error file handler
     file_error_handler = logging.FileHandler(var.errorfile, encoding="utf-8", mode="a")
     file_error_handler.setLevel(logging.ERROR)
     file_error_handler.setFormatter(formatter)
+    logger.addHandler(file_error_handler)
 
-    # Broadcast Settings, replace with yours
     logger.set_broadcastlevel(logging.WARNING)
     logger.broadcasturl = os.getenv("LOGFLARE_URL", "")
-    logger.project_name = os.getenv("LOGFLARE_NAME", "")
-    logger.project_key = os.getenv("LOGFLARE_KEY", "")
-    logger.broadcast = True
+    logger.project_name = os.getenv("DISCORD_LOGFLARE_NAME", "")
+    logger.project_key = os.getenv("DISCORD_LOGFLARE_KEY", "")
+    logger.test_connection()
+
+    logger.broadcast = broadcast_initial
+    if broadcast_delay > 0:
+        logger.enable_broadcast_after(broadcast_delay)
+
+    return logger
   ```
