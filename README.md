@@ -60,3 +60,12 @@ def set_logger(name="LogFlare"):
 
     return logger
   ```
+
+**It is CRITICAL to user this format
+```python
+    formatter = logging.Formatter(
+        "%(asctime)s | %(levelname)s | %(message)s", "%Y-%m-%d %H:%M:%S"
+    )
+```
+for your logger, or else it won't be parsed correctly
+
