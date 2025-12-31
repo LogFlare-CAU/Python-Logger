@@ -16,10 +16,39 @@ class LogFlare(logging.Logger):
         self.broadcastlevel: int = logging.WARNING
         self.broadcast: bool = False
 
-    # --------------------------- 내부 유틸 ---------------------------
+    def headers(self) -> dict:
+        return {
+            "Content-Type": "application/json",
+            "Project": self.project_name,
+            "ProjectKey": "Bearer " + self.project_key,
+        }
+
+    def test_connection(self) -> bool:
+        """동기 함수에서 비동기 연결 테스트 실행"""
+        try:
+            self._spawn_coro(self._test_connection())
+            return True
+        except Exception:
+            return False
+
+    async def _test_connection(self) -> bool:
+        self.info("\n\n====================\nTesting LogFlare Connection\n====================\n\n")
+        if not (self.project_name and self.project_key and self.broadcasturl):
+            self.warning("\n\n====================\nLogFlare Info InComplete\n====================\n\n")
+            return False
+        payload = {"errortype": "Test", "level": "INFO", "message": "Test connection", "test":True}
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    self.broadcasturl, json=payload, headers=self.headers()
+                ) as resp:
+                    self.info(f"\n\n====================\nLogFlare connection test status: {resp.status}\n====================\n\n")
+                    return resp.status < 400
+        except Exception:
+            self.exception("\n\n====================\nLogFlare connection test failed\n====================\n\n")
+            return False
 
     def _spawn_coro(self, coro):
-        """비동기 루프 유무에 상관없이 안전하게 코루틴 실행"""
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
@@ -34,41 +63,35 @@ class LogFlare(logging.Logger):
         else:
             loop.create_task(coro)
 
-    # --------------------------- 브로드캐스트 ---------------------------
-
     def set_broadcastlevel(self, level: int) -> None:
-        """브로드캐스트 레벨 설정"""
         self.broadcastlevel = level
+
+    async def _enable_broadcast_after(self, delay: float) -> None:
+        await asyncio.sleep(delay)
+        self.broadcast = True
+        super().info(f"logger.broadcast enabled after {delay:.1f}s")
+
+    def enable_broadcast_after(self, delay: float) -> None:
+        """루프 유무와 상관없이 delay 후 broadcast=True로 전환"""
+        if delay <= 0:
+            self.broadcast = True
+            return
+        self._spawn_coro(self._enable_broadcast_after(delay))
 
     async def broadcast_(self, errortype, level_name: str, msg: str) -> None:
         if not (self.project_name and self.project_key and self.broadcasturl):
             return
-
-        payload = {
-            "errortype": errortype,
-            "level": level_name,
-            "message": msg,
-        }
-        headers = {
-            "Content-Type": "application/json",
-            "Project": self.project_name,
-            "ProjectKey": "Bearer " + self.project_key,
-        }
-
+        payload = {"errortype": errortype, "level": level_name, "message": msg}
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    self.broadcasturl,
-                    json=payload,
-                    headers=headers,
+                    self.broadcasturl, json=payload, headers=self.headers()
                 ) as resp:
                     if resp.status >= 400:
                         text = await resp.text()
                         print(f"[Broadcast FAIL] {resp.status} {text}")
         except Exception as e:
             print(f"[Broadcast EXC] {e!r}")
-
-    # --------------------------- 오버라이드 ---------------------------
 
     def _log(
         self,
@@ -80,38 +103,29 @@ class LogFlare(logging.Logger):
         stack_info=False,
         stacklevel=1,
     ):
-        """표준 로깅 경로 오버라이드: errortype 자동 감지 + 브로드캐스트"""
-        # 원본 메시지 포맷팅
         try:
             formatted = (msg % args) if args else str(msg)
         except Exception:
             formatted = str(msg)
 
-        # errortype 추출
         errortype = None
         if exc_info:
             if isinstance(exc_info, tuple):
-                # (exc_type, exc, tb)
                 errortype = getattr(exc_info[0], "__name__", None)
             elif isinstance(exc_info, BaseException):
-                # Exception 인스턴스 직접 전달된 경우
                 errortype = type(exc_info).__name__
             else:
-                # exc_info=True 이고, 현재 컨텍스트에 예외가 있는 경우
                 exc_type, _, _ = sys.exc_info()
                 if exc_type:
                     errortype = exc_type.__name__
 
-        # 3번의 추가 보정: 실수로 logger.error(error) 같은 패턴을 쓴 경우
         if errortype is None and isinstance(msg, BaseException):
             errortype = type(msg).__name__
 
-        # 브로드캐스트
         if self.broadcast and level >= self.broadcastlevel:
             level_name = logging.getLevelName(level)
             self._spawn_coro(self.broadcast_(errortype, level_name, formatted))
 
-        # 실제 로그 출력
         super()._log(
             level,
             msg,
@@ -122,16 +136,11 @@ class LogFlare(logging.Logger):
             stacklevel=stacklevel,
         )
 
-    # --------------------------- 표준 레벨 메서드 오버라이드 ---------------------------
-
     def warning(self, msg, *args, **kwargs):
-        """기본 exc_info 건드리지 않고 그대로 전달"""
         return self._log(logging.WARNING, msg, args, **kwargs)
 
     def error(self, msg, *args, **kwargs):
-        """기본 exc_info 건드리지 않고 그대로 전달"""
         return self._log(logging.ERROR, msg, args, **kwargs)
 
     def exception(self, msg, *args, exc_info=True, **kwargs):
-        """exception()은 항상 예외 컨텍스트 포함하는 용도"""
         return self._log(logging.ERROR, msg, args, exc_info=exc_info, **kwargs)
