@@ -1,0 +1,34 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "logflare-logger"
+version = "1.0.0"
+description = "Non-blocking Python logging handler for LogFlare"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = ["aiohttp>=3.13,<4"]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.3",
+  "pytest>=8.4",
+  "pytest-asyncio>=1.2",
+  "ruff>=0.12",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/logflare_logger"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+asyncio_mode = "auto"
+testpaths = ["tests"]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP"]
